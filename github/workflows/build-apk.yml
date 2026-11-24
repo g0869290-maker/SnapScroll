@@ -1,0 +1,65 @@
+name: Build SnapScroll APK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '**.zip'
+      - '.github/workflows/build-apk.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Find and extract SnapScroll ZIP
+        id: extract
+        shell: bash
+        run: |
+          ZIP_FILE="$(find . -maxdepth 3 -type f -iname '*.zip' -not -path './.git/*' | head -n 1)"
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "No ZIP file found. Upload the project ZIP first."
+            exit 1
+          fi
+
+          mkdir -p "$RUNNER_TEMP/snapscroll-source"
+          unzip -q "$ZIP_FILE" -d "$RUNNER_TEMP/snapscroll-source"
+
+          WRAPPER="$(find "$RUNNER_TEMP/snapscroll-source" -type f -name gradlew -print -quit)"
+
+          if [ -z "$WRAPPER" ]; then
+            echo "No Gradle wrapper (gradlew) found in the ZIP."
+            exit 1
+          fi
+
+          PROJECT_DIR="$(dirname "$WRAPPER")"
+          echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Build debug APK
+        working-directory: ${{ steps.extract.outputs.project_dir }}
+        shell: bash
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: SnapScroll-debug-APK
+          path: |
+            ${{ steps.extract.outputs.project_dir }}/**/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
