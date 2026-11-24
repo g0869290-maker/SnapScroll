@@ -4,6 +4,10 @@ name: Build SnapScroll APK
 on:
   workflow_dispatch:
   push:
+    paths:
+      - '*.zip'
+      - '**/*.zip'
+      - '.github/workflows/build-apk.yml'
 
 permissions:
   contents: read
@@ -27,13 +31,28 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK packages
+      - name: Configure Android SDK
+        shell: bash
         run: |
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
-          yes | sdkmanager --licenses
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" \
+            -type f -name sdkmanager | sort -V | tail -n 1)
+
+          if [ -z "$SDKMANAGER" ]; then
+            echo "::error::Android SDK manager not found"
+            exit 1
+          fi
+
+          echo "Using SDK manager: $SDKMANAGER"
+
+          yes | "$SDKMANAGER" \
+            --sdk_root="$ANDROID_HOME" --licenses || true
+
+          "$SDKMANAGER" --sdk_root="$ANDROID_HOME" \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
 
       - name: Extract SnapScroll ZIP
         id: extract
@@ -55,7 +74,7 @@ jobs:
             -printf '%h\n' | head -n 1)
 
           if [ -z "$PROJECT_DIR" ]; then
-            echo "::error::settings.gradle.kts not found"
+            echo "::error::Gradle project not found"
             exit 1
           fi
 
